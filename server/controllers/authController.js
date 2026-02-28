@@ -1,65 +1,58 @@
-import User from "../models/User.js";
-import jwt from "jsonwebtoken";
-import redis from "../config/redis.js"
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-};
+import User from '../models/User.js';
+import jwt from 'jsonwebtoken';
+import redis from '../config/redis.js';
+import { validatePassword } from '../utils/passwordValidator.js';
 
-
-
-export const registerUser = async (req, res) => {
-  const { name, username, email, password } = req.body;
-
-  const userExists = await User.findOne({
-    $or: [{ email }, { username }]
-  });
-
-  if (userExists)
-    return res.status(400).json({ message: "User already exists" });
-
-  const user = await User.create({
-    name,
-    username,
-    email,
-    password
-  });
-
-  const token = generateToken(user._id);
-
-  res.cookie("token", token, {
-    httpOnly: true,
-    secure: false,
-    sameSite: "lax"
-  });
-
-  res.status(201).json({
-    _id: user._id,
-    name: user.name,
-    username: user.username,
-    email: user.email
-  });
-};
-
-
-
-export const loginUser = async (req, res) => {
+// Register new user
+export const register = async (req, res) => {
   try {
-    const { identifier, password } = req.body;
+    const { username, email, password, name } = req.body;
 
-    const user = await User.findOne({
-      $or: [
-        { email: identifier },
-        { username: identifier }
-      ]
-    });
-
-    if (!user || !(await user.matchPassword(password))) {
-      return res.status(401).json({ message: "Invalid credentials" });
+    if (!username || !email || !password) {
+      return res.status(400).json({ 
+        message: 'Username, email, and password are required' 
+      });
     }
 
-    const token = generateToken(user._id);
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({ 
+        message: 'Password does not meet requirements',
+        errors: passwordValidation.errors
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ 
+      $or: [{ email }, { username }] 
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ 
+        message: existingUser.email === email 
+          ? 'Email already registered' 
+          : 'Username already taken'
+      });
+    }
+
+    // Create new user
+    const user = await User.create({
+      username,
+      email,
+      password, 
+      name: name || username
+    });
+
+    // Generate JWT
+    const token = jwt.sign(
+      { id: user._id }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '30d' }
+    );
+
+    // Cache user in Redis
     await redis.setex(
-      `user: ${user._id}`,
+      `user:${user._id}`,
       3600,
       JSON.stringify({
         _id: user._id,
@@ -69,47 +62,134 @@ export const loginUser = async (req, res) => {
         friends: user.friends
       })
     );
-    res.cookie("token", token, {
+
+    // Set cookie
+    res.cookie('token', token, {
       httpOnly: true,
-      secure: false,
-      sameSite: "lax"
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
 
-    res.status(200).json({
+    // Send response
+    res.status(201).json({
       _id: user._id,
-      name: user.name,
       username: user.username,
-      email: user.email
+      email: user.email,
+      name: user.name
+    });
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ 
+      message: 'Server error during registration',
+      error: error.message 
     });
   }
-  catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
 };
 
-
-
-
-export const logoutUser = async (req, res) => {
+// Login user
+export const login = async (req, res) => {
   try {
-    if (req.user && req.user._id) {
-      await redis.del(`user: ${req.user._id}`);
-      console.log("cleared cache for user: ", req.user_id);
+    const { email, password } = req.body;
+
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({ 
+        message: 'Email and password are required' 
+      });
     }
-    res.clearCookie("token");
-    res.json({ message: "Logged Out!" });
-  }
-  catch (err) {
-    console.error('Logout error:', error);
-    res.status(500).json({ message: "Server error" });
+
+    const user = await User.findOne({ email }).select('+password');
+    
+    if (!user) {
+      return res.status(401).json({ 
+        message: 'Invalid email or password' 
+      });
+    }
+
+    // Check password
+    const isMatch = await user.matchPassword(password);
+    
+    if (!isMatch) {
+      return res.status(401).json({ 
+        message: 'Invalid email or password' 
+      });
+    }
+
+    // Generate JWT
+    const token = jwt.sign(
+      { id: user._id }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '30d' }
+    );
+
+    
+    await redis.setex(
+      `user:${user._id}`,
+      3600,
+      JSON.stringify({
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        name: user.name,
+        friends: user.friends
+      })
+    );
+
+   
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 30 * 24 * 60 * 60 * 1000
+    });
+
+    res.json({
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      name: user.name
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ 
+      message: 'Server error during login',
+      error: error.message 
+    });
   }
 };
 
+// Logout user
+export const logout = async (req, res) => {
+  try {
+    // Clear Redis cache
+    if (req.user && req.user._id) {
+      await redis.del(`user:${req.user._id}`);
+      console.log('✓ Cleared cache for user:', req.user._id);
+    }
+
+    // Clear cookie
+    res.clearCookie('token');
+    res.json({ message: 'Logged out successfully' });
+    
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ 
+      message: 'Server error during logout',
+      error: error.message 
+    });
+  }
+};
+
+// Get current user
 export const getMe = async (req, res) => {
-  res.json({
-    _id: req.user._id,
-    name: req.user.name,
-    email: req.user.email,
-    username: req.user.username
-  });
+  try {
+    res.json(req.user);
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ 
+      message: 'Server error',
+      error: error.message 
+    });
+  }
 };
