@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
 import { getMessages } from "../services/chatApi";
+import Toast from "../components/Toast"; 
 
 import Sidebar from "../components/Sidebar";
 import MessageList from "../components/MessageList";
@@ -18,8 +19,9 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [onlineUsers, setOnlineUsers] = useState(new Set()); // ✨ NEW
-  const [typingUsers, setTypingUsers] = useState({}); // ✨ NEW: Typing indicators
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const [typingUsers, setTypingUsers] = useState({});
+  const [toast, setToast] = useState(null);
 
   // Socket connection status
   useEffect(() => {
@@ -31,19 +33,19 @@ export default function Chat() {
       console.error("Socket connection error:", err);
     });
 
-    // ✨ NEW: Handle initial online users list
+
     socket.on("initialOnlineUsers", (userIds) => {
       console.log("Initial online users:", userIds);
       setOnlineUsers(new Set(userIds));
     });
 
-    // ✨ NEW: Handle user coming online
+
     socket.on("userOnline", (userId) => {
       console.log("User came online:", userId);
       setOnlineUsers(prev => new Set([...prev, userId]));
     });
 
-    // ✨ NEW: Handle user going offline
+
     socket.on("userOffline", (userId) => {
       console.log("User went offline:", userId);
       setOnlineUsers(prev => {
@@ -53,10 +55,10 @@ export default function Chat() {
       });
     });
 
-    // ✨ NEW: Handle typing events
+
     socket.on("userTyping", ({ conversationId, userId, username }) => {
       console.log(`${username} is typing in ${conversationId}`);
-      
+
       setTypingUsers(prev => {
         const conversationTypers = prev[conversationId] || [];
         // Add user if not already in the list
@@ -72,11 +74,11 @@ export default function Chat() {
 
     socket.on("userStoppedTyping", ({ conversationId, userId }) => {
       console.log(`User ${userId} stopped typing in ${conversationId}`);
-      
+
       setTypingUsers(prev => {
         const conversationTypers = prev[conversationId] || [];
         const filtered = conversationTypers.filter(u => u.userId !== userId);
-        
+
         return {
           ...prev,
           [conversationId]: filtered
@@ -101,7 +103,7 @@ export default function Chat() {
       console.warn("No user found, cannot join socket room");
       return;
     }
-    
+
     console.log("Joining room for user:", user._id);
     socket.emit("joinUser", user._id);
 
@@ -129,15 +131,20 @@ export default function Chat() {
       try {
         setLoading(true);
         setError(null);
-        
+
         console.log("Loading messages for conversation:", activeId);
         const res = await getMessages(activeId);
-        
+
         console.log("Messages loaded:", res.data);
         setMessages(res.data || []);
       } catch (err) {
         console.error("Error loading messages:", err);
-        setError(err.message || "Failed to load messages");
+        const errorMsg = err.message || "Failed to load messages";
+        setError(errorMsg);
+        setToast({
+          message: errorMsg,
+          type: "error"
+        })
       } finally {
         setLoading(false);
       }
@@ -156,7 +163,7 @@ export default function Chat() {
   useEffect(() => {
     const handleNewMessage = (msg) => {
       console.log("New message received via socket:", msg);
-      
+
       if (msg.conversation === activeId) {
         setMessages((prev) => [...prev, msg]);
       }
@@ -167,10 +174,17 @@ export default function Chat() {
     return () => socket.off("newMessage", handleNewMessage);
   }, [activeId]);
 
+  const handleMessageError = (errorMessage) => {
+    setToast({
+      message: errorMessage,
+      type: "error"
+    })
+  }
+
   return (
     <div className="h-screen bg-black text-white flex">
-      <Sidebar 
-        activeId={activeId} 
+      <Sidebar
+        activeId={activeId}
         setActiveId={setActiveId}
         onlineUsers={onlineUsers}
       />
@@ -188,8 +202,8 @@ export default function Chat() {
               </div>
             ) : (
               <>
-                <MessageList 
-                  messages={messages} 
+                <MessageList
+                  messages={messages}
                   user={user}
                   typingUsers={typingUsers[activeId] || []}
                 />
@@ -200,6 +214,7 @@ export default function Chat() {
                   onNew={(msg) => {
                     console.log("Message sent:", msg);
                   }}
+                  onError={handleMessageError}
                 />
               </>
             )}
@@ -210,6 +225,14 @@ export default function Chat() {
           </div>
         )}
       </div>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

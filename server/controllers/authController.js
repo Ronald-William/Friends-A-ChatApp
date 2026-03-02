@@ -9,28 +9,28 @@ export const register = async (req, res) => {
     const { username, email, password, name } = req.body;
 
     if (!username || !email || !password) {
-      return res.status(400).json({ 
-        message: 'Username, email, and password are required' 
+      return res.status(400).json({
+        message: 'Username, email, and password are required'
       });
     }
 
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.isValid) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: 'Password does not meet requirements',
         errors: passwordValidation.errors
       });
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ 
-      $or: [{ email }, { username }] 
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }]
     });
 
     if (existingUser) {
-      return res.status(400).json({ 
-        message: existingUser.email === email 
-          ? 'Email already registered' 
+      return res.status(400).json({
+        message: existingUser.email === email
+          ? 'Email already registered'
           : 'Username already taken'
       });
     }
@@ -39,14 +39,14 @@ export const register = async (req, res) => {
     const user = await User.create({
       username,
       email,
-      password, 
+      password,
       name: name || username
     });
 
     // Generate JWT
     const token = jwt.sign(
-      { id: user._id }, 
-      process.env.JWT_SECRET, 
+      { id: user._id },
+      process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
 
@@ -80,9 +80,9 @@ export const register = async (req, res) => {
 
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Server error during registration',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -91,39 +91,44 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
+    console.log('Login attempt:', { email });
     // Validate input
     if (!email || !password) {
-      return res.status(400).json({ 
-        message: 'Email and password are required' 
+      return res.status(400).json({
+        message: 'Email and password are required'
       });
     }
 
-    const user = await User.findOne({ email }).select('+password');
-    
+    const user = await User.findOne({
+      $or: [
+        { email: email },
+        { username: email }
+      ]
+    }).select('+password');
+
     if (!user) {
-      return res.status(401).json({ 
-        message: 'Invalid email or password' 
+      return res.status(401).json({
+        message: 'Invalid email or password'
       });
     }
 
     // Check password
     const isMatch = await user.matchPassword(password);
-    
+
     if (!isMatch) {
-      return res.status(401).json({ 
-        message: 'Invalid email or password' 
+      return res.status(401).json({
+        message: 'Invalid email or password'
       });
     }
 
     // Generate JWT
     const token = jwt.sign(
-      { id: user._id }, 
-      process.env.JWT_SECRET, 
+      { id: user._id },
+      process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
 
-    
+
     await redis.setex(
       `user:${user._id}`,
       3600,
@@ -136,7 +141,7 @@ export const login = async (req, res) => {
       })
     );
 
-   
+
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -152,9 +157,9 @@ export const login = async (req, res) => {
 
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Server error during login',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -171,12 +176,12 @@ export const logout = async (req, res) => {
     // Clear cookie
     res.clearCookie('token');
     res.json({ message: 'Logged out successfully' });
-    
+
   } catch (error) {
     console.error('Logout error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Server error during logout',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -187,9 +192,9 @@ export const getMe = async (req, res) => {
     res.json(req.user);
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 };

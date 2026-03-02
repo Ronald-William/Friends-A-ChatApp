@@ -1,13 +1,15 @@
 import { useState, useRef } from "react";
 import { sendMessage } from "../services/chatApi";
 
-export default function MessageInput({ convoId, user, socket, onNew }) {
+export default function MessageInput({ convoId, user, socket, onNew, onError }) {
   const [text, setText] = useState("");
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
+  const [sending, setSending] = useState(false);
 
   const handleSend = async () => {
     if (!text.trim() || !convoId) return;
+    const messageText = text.trim();
 
     // Stop typing indicator when sending
     if (isTypingRef.current) {
@@ -17,15 +19,38 @@ export default function MessageInput({ convoId, user, socket, onNew }) {
       });
       isTypingRef.current = false;
     }
-
-    const res = await sendMessage({
-      conversationId: convoId,
-      text
-    });
-
-    onNew(res.data);
+    setSending(true);
     setText("");
-  };
+
+    try {
+      const res = await sendMessage({
+        conversationId: convoId,
+        text: messageText
+      });
+
+      onNew(res.data);
+
+    }
+    catch (error) {
+      console.log("Failed to send message: ", error);
+      setText(messageText);
+      if (onError) {
+        const errorMessage = error.response?.status === 403
+          ? "You don't have permission to send messages in this conversation"
+          : error.response?.status === 404
+            ? "Conversation not found"
+            : error.message === "Network Error"
+              ? "Network error. Please check your connection and try again"
+              : "Failed to send message. Please try again";
+
+        onError(errorMessage);
+      }
+    }
+    finally {
+      setSending(false);
+    }
+  }
+
 
   const handleTyping = (e) => {
     const value = e.target.value;
@@ -83,16 +108,18 @@ export default function MessageInput({ convoId, user, socket, onNew }) {
         className="flex-1 bg-zinc-800 p-2 rounded"
         value={text}
         onChange={handleTyping}
-        onKeyPress={handleKeyPress}
-        placeholder="Type message..."
+        onKeyDown={handleKeyPress}
+        placeholder={sending ? "sending" : "Type message..."}
+        disabled={sending}
       />
 
       <button
         onClick={handleSend}
-        className="px-4 bg-blue-600 rounded hover:bg-blue-700 transition-colors"
+        disabled={!text.trim() || sending}
+        className="px-4 bg-blue-600 rounded hover:bg-blue-700 transition-colors disabled:bg-zinc-700 disabled:cursor-not-allowed"
       >
-        Send
+        {sending ? "..." : "Send"}
       </button>
     </div>
   );
-}
+};
