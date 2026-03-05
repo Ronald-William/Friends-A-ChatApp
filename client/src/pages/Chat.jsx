@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
-import { getMessages } from "../services/chatApi";
-import Toast from "../components/Toast"; 
+import { getMessages, getUnreadCounts, markConversationAsRead } from "../services/chatApi";
+import Toast from "../components/Toast";
 
 import Sidebar from "../components/Sidebar";
 import MessageList from "../components/MessageList";
@@ -22,6 +22,7 @@ export default function Chat() {
   const [onlineUsers, setOnlineUsers] = useState(new Set());
   const [typingUsers, setTypingUsers] = useState({});
   const [toast, setToast] = useState(null);
+  const [unreadCounts, setUnreadCounts] = useState({});
 
   // Socket connection status
   useEffect(() => {
@@ -86,6 +87,14 @@ export default function Chat() {
       });
     });
 
+    socket.on("unreadCountUpdate", ({ conversationId, count }) => {
+      setActiveId(currentActiveId => {
+        if (currentActiveId !== conversationId) {
+          setUnreadCounts(prev => ({ ...prev, [conversationId]: count }));
+        }
+        return currentActiveId;
+      })
+    })
     return () => {
       socket.off("connect");
       socket.off("connect_error");
@@ -107,14 +116,20 @@ export default function Chat() {
     console.log("Joining room for user:", user._id);
     socket.emit("joinUser", user._id);
 
+    getUnreadCounts()
+    .then(res => setUnreadCounts(res.data || {}))
+    .catch(err => console.error("Failed to load unread counts:", err));
 
     const heartbeatInterval = setInterval(() => {
       socket.emit("heartbeat", user._id);
       console.log("Heartbeat sent");
     }, 240000);
 
+    
     return () => clearInterval(heartbeatInterval);
   }, [user]);
+
+  
 
   // Load messages and join conversation room when conversation changes
   useEffect(() => {
@@ -126,6 +141,16 @@ export default function Chat() {
     // Join the conversation room for real-time updates
     console.log("Joining conversation room:", activeId);
     socket.emit("joinConversation", activeId);
+
+    markConversationAsRead(activeId)
+      .then(() => {
+        setUnreadCounts(prev => {
+          const next = { ...prev };
+          delete next[activeId];
+          return next;
+        })
+      })
+      .catch(err=> console.error("Failed to mark as read: ", err));
 
     const load = async () => {
       try {
@@ -187,6 +212,7 @@ export default function Chat() {
         activeId={activeId}
         setActiveId={setActiveId}
         onlineUsers={onlineUsers}
+        unreadCounts={unreadCounts}
       />
 
       <div className="flex-1 flex flex-col">

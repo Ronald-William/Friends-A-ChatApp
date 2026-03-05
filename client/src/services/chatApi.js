@@ -11,3 +11,11 @@ export const getMessages = (convoId) =>
 
 export const sendMessage = (data) =>
   api.post("/messages", data);
+
+export const getUnreadCounts= ()=>{
+  return api.get("/messages/unread");
+}
+
+export const markConversationAsRead = (convoId)=>{
+  return api.post(`/messages/${convoId}/read`);
+}
