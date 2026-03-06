@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
-import { getMessages, getUnreadCounts, markConversationAsRead } from "../services/chatApi";
+import { getMessages, getUnreadCounts, markConversationAsRead, deleteMessage } from "../services/chatApi";
 import Toast from "../components/Toast";
 
 import Sidebar from "../components/Sidebar";
@@ -95,6 +95,12 @@ export default function Chat() {
         return currentActiveId;
       })
     })
+
+    socket.on("messageDeleted", ({ messageId }) => {
+      setMessages(prev => prev.filter(m => m._id !== messageId));
+    });
+
+
     return () => {
       socket.off("connect");
       socket.off("connect_error");
@@ -103,6 +109,7 @@ export default function Chat() {
       socket.off("userOffline");
       socket.off("userTyping");
       socket.off("userStoppedTyping");
+      socket.off("messageDeleted");
     };
   }, []);
 
@@ -117,19 +124,21 @@ export default function Chat() {
     socket.emit("joinUser", user._id);
 
     getUnreadCounts()
-    .then(res => setUnreadCounts(res.data || {}))
-    .catch(err => console.error("Failed to load unread counts:", err));
+      .then(res => setUnreadCounts(res.data || {}))
+      .catch(err => console.error("Failed to load unread counts:", err));
+
+    
 
     const heartbeatInterval = setInterval(() => {
       socket.emit("heartbeat", user._id);
       console.log("Heartbeat sent");
     }, 240000);
 
-    
+
     return () => clearInterval(heartbeatInterval);
   }, [user]);
 
-  
+
 
   // Load messages and join conversation room when conversation changes
   useEffect(() => {
@@ -150,7 +159,7 @@ export default function Chat() {
           return next;
         })
       })
-      .catch(err=> console.error("Failed to mark as read: ", err));
+      .catch(err => console.error("Failed to mark as read: ", err));
 
     const load = async () => {
       try {
@@ -206,6 +215,14 @@ export default function Chat() {
     })
   }
 
+  const handleDeleteMessage = async (messageId) => {
+  try {
+    await deleteMessage(messageId);
+  } catch (err) {
+    setToast({ message: "Failed to delete message", type: "error" });
+  }
+};
+
   return (
     <div className="h-screen bg-black text-white flex">
       <Sidebar
@@ -232,6 +249,7 @@ export default function Chat() {
                   messages={messages}
                   user={user}
                   typingUsers={typingUsers[activeId] || []}
+                  onDeleteMessage={handleDeleteMessage}
                 />
                 <MessageInput
                   convoId={activeId}

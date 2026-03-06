@@ -4,18 +4,15 @@ import {
   sendMessage,
   getMessages,
   getUnreadCounts,
-  markAsRead
+  markAsRead,
+  deleteMessage
 } from "../controllers/messageController.js";
 
 const router = express.Router();
 
 router.get("/unread",protect,getUnreadCounts);
-// GET /api/messages/:convoId - Get all messages in a conversation
 router.get("/:convoId", protect, getMessages);
-
-// POST /api/messages - Send a new message (expects conversationId in body)
 router.post("/", protect, sendMessage);
-
 router.post("/:convoId/read",protect,markAsRead);
-
+router.delete("/:messageId", protect, deleteMessage);
 export default router;

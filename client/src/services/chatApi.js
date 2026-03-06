@@ -19,3 +19,5 @@ export const getUnreadCounts= ()=>{
 export const markConversationAsRead = (convoId)=>{
   return api.post(`/messages/${convoId}/read`);
 }
+
+export const deleteMessage = (messageId) => api.delete(`/messages/${messageId}`);

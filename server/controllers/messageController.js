@@ -138,3 +138,28 @@ export const getUnreadCounts = async(req,res)=>{
     res.status(500).json({message: "Server Error", error: error.message});
   }
 }
+
+export const deleteMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+
+    const message = await Message.findById(messageId);
+    if (!message) return res.status(404).json({ message: "Message not found" });
+
+    // Only the sender can delete their message
+    if (message.sender.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "You can only delete your own messages" });
+    }
+
+    const conversationId = message.conversation.toString();
+    await Message.findByIdAndDelete(messageId);
+
+    // Notify everyone in the conversation room
+    io.to(conversationId).emit("messageDeleted", { messageId, conversationId });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting message:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
