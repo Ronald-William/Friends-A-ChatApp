@@ -8,7 +8,20 @@ const conversationSchema = new mongoose.Schema(
         ref: "User",
         required: true
       }
-    ]
+    ],
+    isGroup: {
+      type: Boolean,
+      default: false
+    },
+    groupName: {
+      type: String,
+      default: null
+    },
+    admin: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null
+    }
   },
   { timestamps: true }
 );
