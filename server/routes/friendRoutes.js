@@ -18,26 +18,7 @@ router.post("/request/:username", protect, async (req, res) => {
   res.json({ message: "Request sent" });
 });
 
-router.post("/accept/:id", protect, async (req, res) => {
-  const senderId = req.params.id;
 
-  if (!req.user.friendRequests.includes(senderId))
-    return res.status(400).json({ message: "No request" });
-
-  req.user.friendRequests = req.user.friendRequests.filter(
-    (id) => id.toString() !== senderId
-  );
-
-  req.user.friends.push(senderId);
-
-  const sender = await User.findById(senderId);
-  sender.friends.push(req.user._id);
-
-  await sender.save();
-  await req.user.save();
-
-  res.json({ message: "Friend added" });
-});
 
 router.get("/", protect, async (req, res) => {
   const user = await User.findById(req.user._id).populate(

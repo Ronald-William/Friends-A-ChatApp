@@ -5,7 +5,7 @@ import morgan from "morgan";
 import authRoutes from "./routes/authRoutes.js"
 import msgRoutes from "./routes/msgRoutes.js"
 import conversationRoutes from "./routes/conversationRoutes.js";
-import friendRoutes from "./routes/friendRoutes.js";
+
 import friendRequestRoutes from "./routes/friendRequestRoutes.js"
 import statusRoutes from "./routes/statusRoutes.js"
 
@@ -24,7 +24,6 @@ app.use(
 );
 
 app.use("/api/conversations", conversationRoutes);
-app.use("/api/friends", friendRoutes);
 app.use("/api/users", authRoutes);
 app.use("/api/messages", msgRoutes);
 app.use("/api/friends", friendRequestRoutes)

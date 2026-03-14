@@ -97,6 +97,9 @@ export const acceptFriendRequest = async (req, res) => {
 
     const currentUser = await User.findById(currentUserId);
     const requester = await User.findById(requesterId);
+
+    console.log("friendRequests:", currentUser.friendRequests);
+    console.log("requesterId:", requesterId);
     if (!requester) {
       return res.status(404).json({
         message: 'User not found'
@@ -116,7 +119,7 @@ export const acceptFriendRequest = async (req, res) => {
     );
 
     // Add to friends (bidirectional)
-    if (!currentUser.friends.includes(requesterId)) {
+    if (!currentUser.friendRequests.some(id => id.toString() === requesterId)) {
       currentUser.friends.push(requesterId);
     }
 
@@ -170,7 +173,7 @@ export const rejectFriendRequest = async (req, res) => {
     const currentUser = await User.findById(currentUserId);
 
     // Check if request exists
-    if (!currentUser.friendRequests.includes(requesterId)) {
+    if (!currentUser.friendRequests.some(id => id.toString() === requesterId)) {
       return res.status(400).json({
         message: 'No friend request from this user'
       });
@@ -182,6 +185,7 @@ export const rejectFriendRequest = async (req, res) => {
     );
 
     await currentUser.save();
+    await clearUserCache(currentUserId)
 
     res.status(200).json({
       message: 'Friend request rejected'

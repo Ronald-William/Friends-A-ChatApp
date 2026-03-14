@@ -1,6 +1,7 @@
 import Conversation from "../models/Conversation.js";
 import User from "../models/User.js";
 import redis from "../config/redis.js"
+import {io} from "../server.js"
 
 export const getMyConversations = async (req, res) => {
   try {
@@ -160,11 +161,16 @@ export const createGroup = async (req, res) => {
       .populate("participants", "username name")
       .populate("admin", "username name")
 
+    
+    participantIds.forEach(participantId=>{
+      io.to(participantId.toString()).emit("groupCreated",populateGroup);
+    })
+
     res.status(201).json(populateGroup);
   }
   catch (err) {
     console.log("Error create group:", err);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 }
 
@@ -205,6 +211,11 @@ export const addMember = async (req, res) => {
       .populate("participants", "username name")
       .populate("admin", "username name");
 
+    updated.participants.forEach(p=>{
+      io.to(p._id.toString()).emit("groupUpdated", {convoId, action: "memberAdded", group: updated});
+    });
+
+    io.to(userToAdd._id.toString()).emit("groupCreated", updated);
     res.json(updated);
   }
   catch (err) {
@@ -238,6 +249,14 @@ export const removeMember = async (req, res) => {
       .populate("participants", "username name")
       .populate("admin", "username name");
 
+    const removedUser = await User.findById(userId).select("username"); 
+    updated.participants.forEach(p => {
+      io.to(p._id.toString()).emit("groupUpdated", { convoId, action: "memberRemoved", username: removedUser.username, group: updated });
+    });
+ 
+    // Notify the removed user to remove group from their sidebar
+    io.to(userId).emit("groupRemoved", { convoId });
+
     res.json(updated);
   } catch (error) {
     console.error("Error removing member:", error);
@@ -247,9 +266,9 @@ export const removeMember = async (req, res) => {
 
 export const leaveGroup = async (req, res) => {
   try {
-    const { convoId } = req.params;
+    const { convoId} = req.params;
     const currentUserId = req.user._id;
-
+    
     const convo = await Conversation.findById(convoId);
     if (!convo) return res.status(404).json({ message: "Group not found" });
     if (!convo.isGroup) return res.status(400).json({ message: "Not a group conversation" });
@@ -264,6 +283,14 @@ export const leaveGroup = async (req, res) => {
     await convo.save();
 
     await redis.del(`messages:${convoId}`);
+    const updated = await Conversation.findById(convoId)
+      .populate("participants", "username name")
+      .populate("admin", "username name");
+
+    const removedUser = await User.findById(currentUserId).select("username");
+    updated.participants.forEach(p => {
+      io.to(p._id.toString()).emit("groupUpdated", { convoId, action: "memberLeft", username: removedUser.username , group: updated });
+    });
 
     res.json({ success: true });
   } catch (error) {
@@ -283,6 +310,9 @@ export const disbandGroup = async (req, res) => {
     if (convo.admin.toString() !== currentUserId.toString()) {
       return res.status(403).json({ message: "Only the admin can disband the group" });
     }
+    convo.participants.forEach(p => {
+      io.to(p.toString()).emit("groupRemoved", { convoId });
+    });
 
     await Conversation.findByIdAndDelete(convoId);
     await redis.del(`messages:${convoId}`);
