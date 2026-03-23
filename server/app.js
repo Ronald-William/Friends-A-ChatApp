@@ -22,7 +22,7 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
-
+app.get('/health', (req, res) => res.json({ status: 'OK' }));
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/users", authRoutes);
 app.use("/api/messages", msgRoutes);
